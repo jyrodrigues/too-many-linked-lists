@@ -104,6 +104,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
   fn next(&mut self) -> Option<Self::Item> {
     self.next.map(|node| {
+    // `.map` above is copying `Option<&Node>`; we could use `.take()` instead:
+    //self.next.take().map(|node| {
       self.next = node.next.as_ref().map(|node| &**node);
       // Alternative method w/ turbofish operator: `::<>` helping the compiler
       // with a hint.

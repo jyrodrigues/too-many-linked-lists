@@ -138,6 +138,7 @@ impl<T> List<T> {
 
   pub fn iter(&self) -> Iter<'_, T> {
     Iter {
+      has_iterated_over_all_elements: self.head.is_none() && self.tail.is_null(),
       next: self.head.as_ref().map(|node| &**node),
       prev: unsafe {
         if self.tail.is_null() {
@@ -146,20 +147,29 @@ impl<T> List<T> {
           Some(&*self.tail)
         }
       },
-      has_iterated_over_all_elements: self.head.is_none() && self.tail.is_null(),
     }
   }
 
   pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-    IterMut { next: self.head.as_mut().map(|node| &mut **node) }
+    IterMut {
+      has_iterated_over_all_elements: self.head.is_none() && self.tail.is_null(),
+      next: self.head.as_mut().map(|node| &mut **node),
+      prev: unsafe {
+        if self.tail.is_null() {
+          None
+        } else {
+          Some(&mut *self.tail)
+        }
+      },
+    }
   }
 }
 
 impl<T> Drop for List<T> {
   fn drop(&mut self) {
-    let mut cur_node = self.head.take();
-    while let Some(mut node) = cur_node {
-      cur_node = node.next.take();
+    let mut cur_link = self.head.take();
+    while let Some(mut boxed_node) = cur_link {
+      cur_link = boxed_node.next.take();
     }
   }
 }
@@ -175,7 +185,7 @@ impl<T> Iterator for IntoIter<T> {
 }
 
 impl<T> DoubleEndedIterator for IntoIter<T> {
-  fn next_back(&mut self) -> Option<T> {
+  fn next_back(&mut self) -> Option<Self::Item> {
     self.0.pop_back()
   }
 }
@@ -209,7 +219,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
 }
 
 impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
-  fn next_back(&mut self) -> Option<&'a T> {
+  fn next_back(&mut self) -> Option<Self::Item> {
     if self.has_iterated_over_all_elements {
       return None;
     }
@@ -237,14 +247,54 @@ impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
 
 pub struct IterMut<'a, T> {
   next: Option<&'a mut Node<T>>,
+  prev: Option<&'a mut Node<T>>,
+  has_iterated_over_all_elements: bool,
 }
 
 impl<'a, T> Iterator for IterMut<'a, T> {
   type Item = &'a mut T;
 
   fn next(&mut self) -> Option<Self::Item> {
+    if self.has_iterated_over_all_elements {
+      return None;
+    }
+
+    match (&self.prev, &self.next) {
+      (Some(a), Some(b)) => if a.prev == b.prev {
+        self.has_iterated_over_all_elements = true;
+      }
+      _ => ()
+    }
+
     self.next.take().map(|node| {
       self.next = node.next.as_mut().map(|node| &mut **node);
+      &mut node.elem
+    })
+  }
+}
+
+impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
+  fn next_back(&mut self) -> Option<Self::Item> {
+    if self.has_iterated_over_all_elements {
+      return None;
+    }
+
+    match (&self.prev, &self.next) {
+      (Some(a), Some(b)) => if a.prev == b.prev {
+        self.has_iterated_over_all_elements = true;
+      }
+      _ => ()
+    }
+
+    self.prev.take().map(|node| {
+      self.prev = unsafe {
+        if node.prev.is_null() {
+          None
+        } else {
+          Some(&mut (*node.prev))
+        }
+      };
+
       &mut node.elem
     })
   }
@@ -439,19 +489,21 @@ mod test {
   #[test]
   fn into_iter() {
     let mut list = List::new();
-    list.push_front(1); list.push_front(2);
+    list.push_front(1); list.push_front(2); list.push_front(3);
 
     let mut iter = list.into_iter();
 
+    assert_eq!(iter.next(), Some(3));
     assert_eq!(iter.next(), Some(2));
     assert_eq!(iter.next(), Some(1));
     assert_eq!(iter.next(), None);
 
     let mut list = List::new();
-    list.push_back(1); list.push_back(2);
+    list.push_back(1); list.push_back(2); list.push_back(3);
 
     let mut iter = list.into_iter();
 
+    assert_eq!(iter.next_back(), Some(3));
     assert_eq!(iter.next_back(), Some(2));
     assert_eq!(iter.next_back(), Some(1));
     assert_eq!(iter.next_back(), None);
@@ -473,19 +525,21 @@ mod test {
   #[test]
   fn iter() {
     let mut list = List::new();
-    list.push_front(1); list.push_front(2);
+    list.push_front(1); list.push_front(2); list.push_front(3);
 
     let mut iter = list.iter();
 
+    assert_eq!(iter.next(), Some(&3));
     assert_eq!(iter.next(), Some(&2));
     assert_eq!(iter.next(), Some(&1));
     assert_eq!(iter.next(), None);
 
     let mut list = List::new();
-    list.push_back(1); list.push_back(2);
+    list.push_back(1); list.push_back(2); list.push_back(3);
 
     let mut iter = list.iter();
 
+    assert_eq!(iter.next_back(), Some(&3));
     assert_eq!(iter.next_back(), Some(&2));
     assert_eq!(iter.next_back(), Some(&1));
     assert_eq!(iter.next_back(), None);
@@ -515,5 +569,27 @@ mod test {
     assert_eq!(iter.next(), Some(&mut 2));
     assert_eq!(iter.next(), Some(&mut 1));
     assert_eq!(iter.next(), None);
+
+    let mut list = List::new();
+    list.push_back(1); list.push_back(2);
+
+    let mut iter = list.iter_mut();
+
+    assert_eq!(iter.next_back(), Some(&mut 2));
+    assert_eq!(iter.next_back(), Some(&mut 1));
+    assert_eq!(iter.next_back(), None);
+
+    let mut list = List::new();
+    list.push_front(1); list.push_front(2); list.push_front(3);
+    list.push_front(4);
+
+    let mut iter = list.iter_mut();
+
+    assert_eq!(iter.next(), Some(&mut 4));
+    assert_eq!(iter.next_back(), Some(&mut 1));
+    assert_eq!(iter.next(), Some(&mut 3));
+    assert_eq!(iter.next_back(), Some(&mut 2));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
   }
 }

@@ -100,16 +100,36 @@ impl<T> List<T> {
     pop_node.map(|node| node.elem)
   }
 
-  pub fn peek(&self) -> Option<&T> {
+  pub fn peek_front(&self) -> Option<&T> {
     self.head.as_ref().map(|node| {
       &node.elem
     })
   }
 
-  pub fn peek_mut(&mut self) -> Option<&mut T> {
+  pub fn peek_front_mut(&mut self) -> Option<&mut T> {
     self.head.as_mut().map(|node| {
       &mut node.elem
     })
+  }
+
+  pub fn peek_back(&mut self) -> Option<&T> {
+    if self.tail.is_null() {
+      None
+    } else {
+      unsafe {
+        Some(&(*self.tail).elem)
+      }
+    }
+  }
+
+  pub fn peek_back_mut(&mut self) -> Option<&mut T> {
+    if self.tail.is_null() {
+      None
+    } else {
+      unsafe {
+        Some(&mut (*self.tail).elem)
+      }
+    }
   }
 
   pub fn into_iter(self) -> IntoIter<T> {
@@ -313,27 +333,51 @@ mod test {
   }
 
   #[test]
-  fn peek() {
+  fn peek_front() {
     let mut list = List::new();
 
-    assert!(list.peek().is_none());
-    assert!(list.peek_mut().is_none());
+    assert!(list.peek_front().is_none());
+    assert!(list.peek_front_mut().is_none());
 
     list.push_front(1);
-    assert_eq!(list.peek(), Some(&1));
-    assert_eq!(list.peek_mut(), Some(&mut 1));
+    assert_eq!(list.peek_front(), Some(&1));
+    assert_eq!(list.peek_front_mut(), Some(&mut 1));
 
     list.push_front(2);
-    assert_eq!(list.peek(), Some(&2));
-    assert_eq!(list.peek_mut(), Some(&mut 2));
+    assert_eq!(list.peek_front(), Some(&2));
+    assert_eq!(list.peek_front_mut(), Some(&mut 2));
 
     list.pop_front();
-    assert_eq!(list.peek(), Some(&1));
-    assert_eq!(list.peek_mut(), Some(&mut 1));
+    assert_eq!(list.peek_front(), Some(&1));
+    assert_eq!(list.peek_front_mut(), Some(&mut 1));
 
     list.pop_front();
-    assert_eq!(list.peek(), None);
-    assert_eq!(list.peek_mut(), None);
+    assert_eq!(list.peek_front(), None);
+    assert_eq!(list.peek_front_mut(), None);
+  }
+
+  #[test]
+  fn peek_back() {
+    let mut list = List::new();
+
+    assert!(list.peek_back().is_none());
+    assert!(list.peek_back_mut().is_none());
+
+    list.push_back(1);
+    assert_eq!(list.peek_back(), Some(&1));
+    assert_eq!(list.peek_back_mut(), Some(&mut 1));
+
+    list.push_back(2);
+    assert_eq!(list.peek_back(), Some(&2));
+    assert_eq!(list.peek_back_mut(), Some(&mut 2));
+
+    list.pop_back();
+    assert_eq!(list.peek_back(), Some(&1));
+    assert_eq!(list.peek_back_mut(), Some(&mut 1));
+
+    list.pop_back();
+    assert_eq!(list.peek_back(), None);
+    assert_eq!(list.peek_back_mut(), None);
   }
 
   #[test]

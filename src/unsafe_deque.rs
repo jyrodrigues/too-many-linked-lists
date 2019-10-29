@@ -137,7 +137,17 @@ impl<T> List<T> {
   }
 
   pub fn iter(&self) -> Iter<'_, T> {
-    Iter { next: self.head.as_ref().map(|node| &**node) }
+    Iter {
+      next: self.head.as_ref().map(|node| &**node),
+      prev: unsafe {
+        if self.tail.is_null() {
+          None
+        } else {
+          Some(&*self.tail)
+        }
+      },
+      has_iterated_over_all_elements: self.head.is_none() && self.tail.is_null(),
+    }
   }
 
   pub fn iter_mut(&mut self) -> IterMut<'_, T> {
@@ -164,16 +174,62 @@ impl<T> Iterator for IntoIter<T> {
   }
 }
 
+impl<T> DoubleEndedIterator for IntoIter<T> {
+  fn next_back(&mut self) -> Option<T> {
+    self.0.pop_back()
+  }
+}
+
 pub struct Iter<'a, T> {
   next: Option<&'a Node<T>>,
+  prev: Option<&'a Node<T>>,
+  has_iterated_over_all_elements: bool,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
   type Item = &'a T;
 
   fn next(&mut self) -> Option<Self::Item> {
+    if self.has_iterated_over_all_elements {
+      return None;
+    }
+
+    match (&self.prev, &self.next) {
+      (Some(a), Some(b)) => if a.prev == b.prev {
+        self.has_iterated_over_all_elements = true;
+      }
+      _ => ()
+    }
+
     self.next.take().map(|node| {
       self.next = node.next.as_ref().map(|next| &**next);
+      &node.elem
+    })
+  }
+}
+
+impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
+  fn next_back(&mut self) -> Option<&'a T> {
+    if self.has_iterated_over_all_elements {
+      return None;
+    }
+
+    match (&self.prev, &self.next) {
+      (Some(a), Some(b)) => if a.prev == b.prev {
+        self.has_iterated_over_all_elements = true;
+      }
+      _ => ()
+    }
+
+    self.prev.take().map(|node| {
+      self.prev = unsafe {
+        if node.prev.is_null() {
+          None
+        } else {
+          Some(&(*node.prev))
+        }
+      };
+
       &node.elem
     })
   }
@@ -383,27 +439,69 @@ mod test {
   #[test]
   fn into_iter() {
     let mut list = List::new();
-    list.push_front(1); list.push_front(2); list.push_front(3);
+    list.push_front(1); list.push_front(2);
 
     let mut iter = list.into_iter();
 
-    assert_eq!(iter.next(), Some(3));
     assert_eq!(iter.next(), Some(2));
     assert_eq!(iter.next(), Some(1));
     assert_eq!(iter.next(), None);
+
+    let mut list = List::new();
+    list.push_back(1); list.push_back(2);
+
+    let mut iter = list.into_iter();
+
+    assert_eq!(iter.next_back(), Some(2));
+    assert_eq!(iter.next_back(), Some(1));
+    assert_eq!(iter.next_back(), None);
+
+    let mut list = List::new();
+    list.push_front(1); list.push_front(2); list.push_front(3);
+    list.push_front(4);
+
+    let mut iter = list.into_iter();
+
+    assert_eq!(iter.next(), Some(4));
+    assert_eq!(iter.next_back(), Some(1));
+    assert_eq!(iter.next(), Some(3));
+    assert_eq!(iter.next_back(), Some(2));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
   }
 
   #[test]
   fn iter() {
     let mut list = List::new();
-    list.push_front(1); list.push_front(2); list.push_front(3);
+    list.push_front(1); list.push_front(2);
 
     let mut iter = list.iter();
 
-    assert_eq!(iter.next(), Some(&3));
     assert_eq!(iter.next(), Some(&2));
     assert_eq!(iter.next(), Some(&1));
     assert_eq!(iter.next(), None);
+
+    let mut list = List::new();
+    list.push_back(1); list.push_back(2);
+
+    let mut iter = list.iter();
+
+    assert_eq!(iter.next_back(), Some(&2));
+    assert_eq!(iter.next_back(), Some(&1));
+    assert_eq!(iter.next_back(), None);
+
+    let mut list = List::new();
+    list.push_front(1); list.push_front(2); list.push_front(3);
+    list.push_front(4);
+
+    let mut iter = list.iter();
+
+    assert_eq!(iter.next(), Some(&4));
+    assert_eq!(iter.next_back(), Some(&1));
+    assert_eq!(iter.next(), Some(&3));
+    assert_eq!(iter.next_back(), Some(&2));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
   }
 
   #[test]
